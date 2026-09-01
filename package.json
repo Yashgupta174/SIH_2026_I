@@ -1,0 +1,14 @@
+{
+  "name": "medikiosk-monorepo",
+  "version": "1.0.0",
+  "description": "MediKiosk - AI Clinical Intake Platform Monorepo",
+  "scripts": {
+    "seed": "cd server && node ../scripts/seed.js",
+    "server": "cd server && npm run dev",
+    "client": "cd client && npm run dev",
+    "build:client": "cd client && npm run build"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5"
+  }
+}
