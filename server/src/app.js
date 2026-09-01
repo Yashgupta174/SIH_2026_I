@@ -40,13 +40,19 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 // Static uploads directory
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
-// Health check & Root route
+// Health check & Root routes (supports GET and HEAD)
 app.get('/health', (req, res) => {
   res.status(200).json({ status: 'healthy', timestamp: new Date(), service: 'MediKiosk API' });
 });
+app.head('/health', (req, res) => {
+  res.status(200).end();
+});
 
-app.all('/', (req, res) => {
+app.get('/', (req, res) => {
   res.status(200).json({ status: 'success', message: 'MediKiosk API Server is running' });
+});
+app.head('/', (req, res) => {
+  res.status(200).end();
 });
 
 // API Routes
