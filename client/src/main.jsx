@@ -6,7 +6,12 @@ import App from './App';
 import { AuthProvider } from './store/authContext';
 import { LanguageProvider } from './store/languageContext';
 import { SessionProvider } from './store/sessionContext';
+import axios from 'axios';
 import './index.css';
+
+if (import.meta.env.VITE_API_URL) {
+  axios.defaults.baseURL = import.meta.env.VITE_API_URL;
+}
 
 const queryClient = new QueryClient();
 

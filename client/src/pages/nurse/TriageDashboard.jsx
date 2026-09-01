@@ -11,7 +11,7 @@ export default function TriageDashboard() {
     fetchAlerts();
 
     // Socket.IO Real-Time Listener
-    const socket = io('http://localhost:5000');
+    const socket = io(import.meta.env.VITE_API_URL || 'http://localhost:5000');
     socket.emit('join_triage_room');
 
     socket.on('red_flag_detected', (newAlert) => {
