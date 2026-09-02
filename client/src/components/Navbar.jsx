@@ -12,12 +12,7 @@ export default function Navbar() {
 
   const navLinks = [
     { name: 'Home', path: '/' },
-    { name: 'Patient Portal', path: '/patient/portal', highlight: true },
-    { name: 'Kiosk Intake', path: '/kiosk' },
-    { name: 'OCR Scanner', path: '/kiosk/scanner' },
-    { name: 'Nurse Triage', path: '/nurse' },
-    { name: 'Doctor Queue', path: '/doctor' },
-    { name: 'Admin', path: '/admin' }
+    { name: 'Patient Portal', path: '/patient/portal', highlight: true }
   ];
 
   return (
@@ -58,31 +53,31 @@ export default function Navbar() {
             </div>
           </Link>
 
-          {/* Minimal Navigation Links */}
-          <nav className="hidden lg:flex items-center gap-1">
-            {navLinks.map((link) => {
-              const isActive = location.pathname === link.path;
-              return (
-                <Link
-                  key={link.path}
-                  to={link.path}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
-                    link.highlight
-                      ? 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-xs'
-                      : isActive
-                      ? 'bg-slate-100 text-emerald-800 font-extrabold'
-                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-                  }`}
-                >
-                  {link.name}
-                </Link>
-              );
-            })}
-          </nav>
-
-          {/* Language Switcher & Authentication */}
+          {/* Right Side: Navigation Links + Language Switcher + Authentication */}
           <div className="flex items-center gap-3">
             
+            {/* Right Aligned Navigation Links */}
+            <nav className="flex items-center gap-2 border-r border-slate-200 pr-3">
+              {navLinks.map((link) => {
+                const isActive = location.pathname === link.path;
+                return (
+                  <Link
+                    key={link.path}
+                    to={link.path}
+                    className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-colors ${
+                      link.highlight
+                        ? 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-xs'
+                        : isActive
+                        ? 'bg-slate-100 text-emerald-800 font-extrabold border border-slate-200'
+                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                    }`}
+                  >
+                    {link.name}
+                  </Link>
+                );
+              })}
+            </nav>
+
             {/* Language Switcher */}
             <button
               onClick={() => setLanguage(language === 'hi' ? 'en' : 'hi')}
