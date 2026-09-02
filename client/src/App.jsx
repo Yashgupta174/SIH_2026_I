@@ -1,6 +1,7 @@
 import React from 'react';
 import { Routes, Route } from 'react-router-dom';
 import Navbar from './components/Navbar';
+import Footer from './components/Footer';
 import KioskHome from './pages/kiosk/KioskHome';
 import RegistrationPage from './pages/kiosk/RegistrationPage';
 import ConsentPage from './pages/kiosk/ConsentPage';
@@ -52,6 +53,8 @@ export default function App() {
           <Route path="/patient/portal" element={<PatientPortalPage />} />
         </Routes>
       </main>
+      <Footer />
     </div>
   );
 }
+

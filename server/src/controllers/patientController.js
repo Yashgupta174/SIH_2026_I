@@ -103,3 +103,79 @@ exports.verifyAbha = catchAsync(async (req, res, next) => {
     data: abhaProfile,
   });
 });
+
+exports.loginPortal = catchAsync(async (req, res, next) => {
+  const { mobileNumber, dob } = req.body;
+
+  if (!mobileNumber) {
+    return next(new AppError('Mobile number is required to access patient portal', 400));
+  }
+
+  // Find existing patient by mobile number
+  let patient = await Patient.findOne({ mobileNumber });
+
+  if (!patient) {
+    // For demo/presentation fallback, create a sample patient record if not found
+    const hospitalId = `HOSP-${Math.floor(100000 + Math.random() * 900000)}`;
+    patient = await Patient.create({
+      hospitalId,
+      fullName: 'Ramesh Kumar',
+      dob: dob || new Date('1988-05-14'),
+      gender: 'MALE',
+      mobileNumber,
+      abhaId: `91-${mobileNumber.slice(-4)}-4321-1001`,
+      preferredLanguage: 'hi',
+      medicalHistorySummary: {
+        knownAllergies: ['Penicillin'],
+        chronicConditions: ['Hypertension', 'Type-2 Diabetes'],
+        pastSurgeries: ['Appendectomy (2018)'],
+        currentMedications: ['Tab Metformin 500mg BD', 'Tab Amlodipine 5mg OD']
+      }
+    });
+  }
+
+  res.status(200).json({
+    status: 'success',
+    patient,
+  });
+});
+
+exports.uploadPatientReport = catchAsync(async (req, res, next) => {
+  const patientId = req.params.id;
+  const { documentType, fileUrl, notes, extractedEntities } = req.body;
+
+  const patient = await Patient.findById(patientId);
+  if (!patient) {
+    return next(new AppError('Patient record not found', 404));
+  }
+
+  const doc = await Document.create({
+    patientId,
+    documentType: documentType || 'PRESCRIPTION',
+    fileUrl: fileUrl || 'https://via.placeholder.com/600x800.png?text=Medical+Report',
+    ocrRawText: notes || 'Uploaded via Patient Portal',
+    extractedEntities: extractedEntities || [
+      { type: 'MEDICATION', text: 'Tab Paracetamol 650mg', confidence: 0.95 },
+      { type: 'DOSAGE', text: 'TDS after meals', confidence: 0.92 }
+    ],
+    qualityScore: 92
+  });
+
+  // Update patient's current medications summary if new medications were found
+  if (extractedEntities && Array.isArray(extractedEntities)) {
+    const meds = extractedEntities.filter(e => e.type === 'MEDICATION').map(e => e.text);
+    if (meds.length > 0) {
+      patient.medicalHistorySummary.currentMedications = [
+        ...new Set([...(patient.medicalHistorySummary.currentMedications || []), ...meds])
+      ];
+      await patient.save();
+    }
+  }
+
+  res.status(201).json({
+    status: 'success',
+    document: doc,
+    patient
+  });
+});
+
