@@ -24,6 +24,7 @@ export const SessionProvider = ({ children }) => {
         language: lang,
         chiefComplaint: '',
       });
+      console.log('Session initialized successfully from backend:', res.data);
       setSession(res.data.session);
       setCurrentQuestion(res.data.nextQuestion);
       setAnswers([]);
@@ -31,13 +32,14 @@ export const SessionProvider = ({ children }) => {
       setSummary(null);
       return res.data;
     } catch (err) {
-      console.error('Failed to start session:', err);
-      // Demo Fallback session initialization
+      console.warn('Failed to start backend session, using offline session fallback:', err);
+      // Demo Fallback session initialization with valid 24-character hex ObjectIds
+      const validSessHexId = Array.from({ length: 24 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
       const dummySession = {
-        _id: 'sess_demo_' + Date.now(),
-        sessionId: 'SESS-DEMO',
+        _id: validSessHexId,
+        sessionId: 'SESS-' + Date.now(),
         tokenNumber: 'TOKEN-108',
-        patientId: patientData._id || 'pat_demo',
+        patientId: patientData._id,
         intakeMode: mode,
         status: 'INTERVIEWING',
       };
@@ -69,8 +71,15 @@ export const SessionProvider = ({ children }) => {
     try {
       const res = await axios.post(`/api/clinical-sessions/${session._id}/answers`, newAnswerItem);
       if (res.data.session) setSession(res.data.session);
-      if (res.data.nextQuestion) setCurrentQuestion(res.data.nextQuestion);
       if (res.data.redFlagAlert) setRedFlagAlert(res.data.redFlagAlert);
+      if (res.data.summary) setSummary(res.data.summary);
+
+      if (res.data.isSufficientForDoctor || !res.data.nextQuestion) {
+        console.log('Doctor history intake is sufficient, clearing questions and advancing step.');
+        setCurrentQuestion(null);
+      } else if (res.data.nextQuestion) {
+        setCurrentQuestion(res.data.nextQuestion);
+      }
       return res.data;
     } catch (err) {
       console.error('Submit answer fallback mode:', err);

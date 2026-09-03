@@ -1,62 +1,41 @@
 const AIProviderInterface = require('./aiProviderInterface');
+const GeminiLangChainProvider = require('./geminiLangChainProvider');
+const MockAIProvider = require('./mockAIProvider');
 const logger = require('../../utils/logger');
 
 class RealAIProvider extends AIProviderInterface {
   constructor() {
     super();
-    this.apiKey = process.env.AI_API_KEY;
-    this.apiEndpoint = process.env.AI_API_ENDPOINT || 'https://api.openai.com/v1/chat/completions';
+    this.geminiProvider = new GeminiLangChainProvider();
+    this.mockFallback = new MockAIProvider();
   }
 
   async transcribeAudio(audioBuffer, language = 'hi') {
-    logger.info('RealAIProvider: Calling Speech API...');
-    // Real API integration logic using OpenAI Whisper / Google Speech API
-    // Graceful fallback if external credentials fail
-    try {
-      if (!this.apiKey) throw new Error('AI_API_KEY not configured');
-      // Fetch or external SDK call here
-      return { text: 'Real speech transcription result', confidence: 0.9, languageDetected: language };
-    } catch (err) {
-      logger.warn(`RealAIProvider speech failed: ${err.message}. Falling back to default.`);
-      return { text: 'Speech processing completed', confidence: 0.85, languageDetected: language };
-    }
+    return await this.mockFallback.transcribeAudio(audioBuffer, language);
   }
 
   async getNextQuestion(sessionState, lastAnswer) {
-    // LLM structured prompt execution
-    return {
-      questionId: 'ai_gen_' + Date.now(),
-      questionText: 'What exacerbates or relieves your symptoms?',
-      category: 'Dynamic Question',
-      options: ['Rest', 'Medication', 'Food/Water', 'Nothing helps'],
-      progressPercent: 60,
-      isFinal: false,
-    };
+    return await this.geminiProvider.getNextQuestion(sessionState, lastAnswer);
   }
 
   async extractClinicalEntities(rawText, context) {
-    return { chiefComplaint: rawText, confidence: 0.9 };
+    return await this.geminiProvider.extractClinicalEntities(rawText, context);
   }
 
   async processDocumentOCR(fileBuffer, fileMetadata) {
-    return { docType: 'PRESCRIPTION', qualityScore: 0.9, extractedEntities: [] };
+    return await this.mockFallback.processDocumentOCR(fileBuffer, fileMetadata);
   }
 
   async generateClinicalSummary(session, answers, documents, mode) {
-    return {
-      disclaimer: 'AI-generated draft — requires clinician verification.',
-      chiefComplaint: session.chiefComplaint || 'Consultation request',
-      historyOfPresentIllness: 'Generated via external LLM model integration.',
-      provenance: [],
-    };
+    return await this.geminiProvider.generateClinicalSummary(session, answers, documents, mode);
   }
 
   async evaluateRedFlags(answers, chiefComplaint) {
-    return [];
+    return await this.mockFallback.evaluateRedFlags(answers, chiefComplaint);
   }
 
   async translateText(text, targetLanguage) {
-    return text;
+    return await this.mockFallback.translateText(text, targetLanguage);
   }
 }
 

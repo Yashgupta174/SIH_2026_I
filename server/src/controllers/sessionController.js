@@ -2,19 +2,30 @@ const ClinicalSession = require('../models/ClinicalSession');
 const Patient = require('../models/Patient');
 const RedFlagAlert = require('../models/RedFlagAlert');
 const ClinicalSummary = require('../models/ClinicalSummary');
-const conversationService = require('../services/ai/conversationService');
-const redFlagService = require('../services/ai/redFlagService');
-const summaryService = require('../services/ai/summaryService');
+const clinicalIntakeAgent = require('../services/ai/clinicalIntakeAgent');
 const speechService = require('../services/ai/speechService');
 const catchAsync = require('../utils/catchAsync');
 const AppError = require('../utils/appError');
 const { getSocketIO } = require('../sockets/socketManager');
 
+const mongoose = require('mongoose');
+const logger = require('../utils/logger');
+
 exports.createSession = catchAsync(async (req, res, next) => {
   const { patientId, department, intakeMode, language, chiefComplaint, kioskId } = req.body;
 
+  logger.info(`[POST /api/clinical-sessions] Creating session for patientId: ${patientId}`);
+
+  if (!mongoose.Types.ObjectId.isValid(patientId)) {
+    logger.error(`[POST /api/clinical-sessions] Invalid patientId ObjectId format: ${patientId}`);
+    return next(new AppError(`Invalid patient ID format: ${patientId}. Expected a 24-character hex MongoDB ObjectId.`, 400));
+  }
+
   const patient = await Patient.findById(patientId);
-  if (!patient) return next(new AppError('Patient not found.', 404));
+  if (!patient) {
+    logger.warn(`[POST /api/clinical-sessions] Patient not found in DB: ${patientId}`);
+    return next(new AppError('Patient record not found.', 404));
+  }
 
   const count = await ClinicalSession.countDocuments();
   const tokenNumber = `TOKEN-${String(count + 1).padStart(3, '0')}`;
@@ -32,13 +43,21 @@ exports.createSession = catchAsync(async (req, res, next) => {
     status: 'INTERVIEWING',
   });
 
-  // Fetch first dynamic question
-  const nextQuestion = await conversationService.getNextQuestion(session, null);
+  logger.info(`[POST /api/clinical-sessions] Session created successfully (_id: ${session._id}, token: ${tokenNumber})`);
+
+  // Run Unified LangChain Agent to evaluate initial question
+  const agentTurn = await clinicalIntakeAgent.processIntakeTurn({
+    session,
+    answers: [],
+    chiefComplaint: chiefComplaint || '',
+    intakeMode: session.intakeMode,
+    language: session.language,
+  });
 
   res.status(201).json({
     status: 'success',
     session,
-    nextQuestion,
+    nextQuestion: agentTurn.nextQuestion,
   });
 });
 
@@ -63,7 +82,7 @@ exports.submitAnswer = catchAsync(async (req, res, next) => {
   const session = await ClinicalSession.findById(sessionId);
   if (!session) return next(new AppError('Clinical session not found.', 404));
 
-  // Add answer
+  // Add answer to session
   session.answers.push({
     questionId,
     questionText,
@@ -74,29 +93,35 @@ exports.submitAnswer = catchAsync(async (req, res, next) => {
     audioSnippetUrl,
   });
 
-  // If first answer and chief complaint not set, set it
-  if (!session.chiefComplaint && questionId.includes('cc')) {
+  if (!session.chiefComplaint && (questionId.includes('cc') || questionId.includes('initial'))) {
     session.chiefComplaint = answerValue;
   }
 
   await session.save();
 
-  // Check Red Flag Safety Rules
-  const redFlagsTriggered = await redFlagService.evaluate(session.answers, session.chiefComplaint);
-  let redFlagDoc = null;
+  // Run Unified LangChain Agent Turn (Evaluates context sufficiency, red flags, next question, & summary)
+  const agentTurn = await clinicalIntakeAgent.processIntakeTurn({
+    session,
+    answers: session.answers,
+    chiefComplaint: session.chiefComplaint,
+    intakeMode: session.intakeMode,
+    language: session.language,
+  });
 
-  if (redFlagsTriggered && redFlagsTriggered.length > 0) {
-    const alertData = redFlagsTriggered[0];
+  // Handle Red Flag Alert if triggered
+  let redFlagDoc = null;
+  if (agentTurn.redFlagAlert) {
+    const alertData = agentTurn.redFlagAlert;
     redFlagDoc = await RedFlagAlert.create({
       sessionId: session._id,
       patientId: session.patientId,
-      ruleId: alertData.ruleId,
+      ruleId: alertData.ruleId || 'RF_ALERT',
       title: alertData.title,
-      category: alertData.category,
-      severity: alertData.severity,
-      triggeredAnswers: alertData.triggeredAnswers,
-      recommendedAction: alertData.recommendedAction,
-      patientMessage: alertData.patientMessage,
+      category: alertData.category || 'Triage Alert',
+      severity: alertData.severity || 'HIGH',
+      triggeredAnswers: alertData.triggeredAnswers || [],
+      recommendedAction: alertData.recommendedAction || 'Immediate Nurse Triage Evaluation Required',
+      patientMessage: alertData.patientMessage || 'Emergency alert flagged.',
     });
 
     session.redFlagAlerts.push(redFlagDoc._id);
@@ -115,19 +140,64 @@ exports.submitAnswer = catchAsync(async (req, res, next) => {
         });
       }
     } catch (e) {
-      console.log('Socket emit info:', e.message);
+      logger.warn(`Socket broadcast info: ${e.message}`);
     }
   }
 
-  // Get Next Question
-  const nextQuestion = await conversationService.getNextQuestion(session, answerValue);
+  // Handle Clinical Summary Persistence if context is sufficient for doctor
+  let summaryDoc = null;
+  if (agentTurn.isSufficientForDoctor && agentTurn.clinicalSummary) {
+    const sData = agentTurn.clinicalSummary;
+    summaryDoc = await ClinicalSummary.findOne({ sessionId: session._id });
+
+    if (summaryDoc) {
+      summaryDoc.chiefComplaint = sData.chiefComplaint || session.chiefComplaint;
+      summaryDoc.historyOfPresentIllness = sData.historyOfPresentIllness;
+      summaryDoc.pastMedicalHistory = sData.pastMedicalHistory;
+      summaryDoc.currentMedications = sData.currentMedications;
+      summaryDoc.allergies = sData.allergies;
+      summaryDoc.ayushAssessment = sData.ayushAssessment;
+      summaryDoc.provenance = sData.provenance;
+      await summaryDoc.save();
+    } else {
+      summaryDoc = await ClinicalSummary.create({
+        sessionId: session._id,
+        patientId: session.patientId,
+        chiefComplaint: sData.chiefComplaint || session.chiefComplaint || 'Clinical Intake',
+        historyOfPresentIllness: sData.historyOfPresentIllness || 'Patient intake history gathered.',
+        pastMedicalHistory: sData.pastMedicalHistory || 'None reported.',
+        currentMedications: sData.currentMedications || 'None reported.',
+        allergies: sData.allergies || 'No known drug allergies.',
+        ayushAssessment: sData.ayushAssessment,
+        provenance: sData.provenance || [],
+        versions: [
+          {
+            versionNumber: 1,
+            editedByRole: 'AI_SYSTEM',
+            chiefComplaint: sData.chiefComplaint || session.chiefComplaint,
+            historyOfPresentIllness: sData.historyOfPresentIllness,
+            pastMedicalHistory: sData.pastMedicalHistory,
+            currentMedications: sData.currentMedications,
+            allergies: sData.allergies,
+            ayushAssessment: sData.ayushAssessment,
+          },
+        ],
+      });
+    }
+
+    session.summaryId = summaryDoc._id;
+    session.status = 'READY_FOR_DOCTOR';
+    await session.save();
+  }
 
   res.status(200).json({
     status: 'success',
     session,
-    nextQuestion,
+    isSufficientForDoctor: agentTurn.isSufficientForDoctor,
+    nextQuestion: agentTurn.nextQuestion,
     redFlagDetected: !!redFlagDoc,
     redFlagAlert: redFlagDoc,
+    summary: summaryDoc,
   });
 });
 
@@ -147,7 +217,19 @@ exports.generateSummaryForSession = catchAsync(async (req, res, next) => {
   session.status = 'SUMMARY_GENERATING';
   await session.save();
 
-  const summaryData = await summaryService.generate(session, session.answers, [], session.intakeMode);
+  const agentTurn = await clinicalIntakeAgent.processIntakeTurn({
+    session,
+    answers: session.answers,
+    chiefComplaint: session.chiefComplaint,
+    intakeMode: session.intakeMode,
+    language: session.language,
+  });
+
+  const summaryData = agentTurn.clinicalSummary || {
+    chiefComplaint: session.chiefComplaint || 'Consultation',
+    historyOfPresentIllness: 'Intake history compiled.',
+    provenance: [],
+  };
 
   let summary = await ClinicalSummary.findOne({ sessionId: session._id });
 
@@ -159,8 +241,6 @@ exports.generateSummaryForSession = catchAsync(async (req, res, next) => {
     summary.allergies = summaryData.allergies;
     summary.provenance = summaryData.provenance;
     summary.ayushAssessment = summaryData.ayushAssessment;
-    summary.redFlags = summaryData.redFlags;
-    summary.missingOrUnclearInfo = summaryData.missingOrUnclearInfo;
     await summary.save();
   } else {
     summary = await ClinicalSummary.create({
@@ -169,15 +249,9 @@ exports.generateSummaryForSession = catchAsync(async (req, res, next) => {
       chiefComplaint: summaryData.chiefComplaint,
       historyOfPresentIllness: summaryData.historyOfPresentIllness,
       pastMedicalHistory: summaryData.pastMedicalHistory,
-      pastSurgicalHistory: summaryData.pastSurgicalHistory,
       currentMedications: summaryData.currentMedications,
       allergies: summaryData.allergies,
-      familyHistory: summaryData.familyHistory,
-      personalHistory: summaryData.personalHistory,
-      reviewOfSystems: summaryData.reviewOfSystems,
       ayushAssessment: summaryData.ayushAssessment,
-      redFlags: summaryData.redFlags,
-      missingOrUnclearInfo: summaryData.missingOrUnclearInfo,
       provenance: summaryData.provenance,
       versions: [
         {
@@ -188,9 +262,8 @@ exports.generateSummaryForSession = catchAsync(async (req, res, next) => {
           pastMedicalHistory: summaryData.pastMedicalHistory,
           currentMedications: summaryData.currentMedications,
           allergies: summaryData.allergies,
-          ayushAssessment: summaryData.ayushAssessment,
-        }
-      ]
+        },
+      ],
     });
   }
 

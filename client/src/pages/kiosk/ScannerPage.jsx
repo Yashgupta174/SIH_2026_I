@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Camera, Upload, FileText, CheckCircle2, AlertCircle, ArrowRight, Eye, Edit3, ShieldCheck } from 'lucide-react';
 import { useLanguage } from '../../store/languageContext';
 import { useSession } from '../../store/sessionContext';
+import AILoadingOverlay from '../../components/AILoadingOverlay';
 import axios from 'axios';
 
 export default function ScannerPage() {
@@ -28,8 +29,11 @@ export default function ScannerPage() {
     setLoading(true);
     const formData = new FormData();
     if (file) formData.append('document', file);
-    formData.append('patientId', patient?._id || 'pat_demo');
-    formData.append('sessionId', session?._id || 'sess_demo');
+    const validPatientId = patient?._id && patient._id.length === 24 ? patient._id : Array.from({ length: 24 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
+    const validSessionId = session?._id && session._id.length === 24 ? session._id : Array.from({ length: 24 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
+
+    formData.append('patientId', validPatientId);
+    formData.append('sessionId', validSessionId);
     formData.append('documentType', documentType);
 
     try {
@@ -224,6 +228,18 @@ export default function ScannerPage() {
         )}
 
       </div>
+
+      {/* AI Processing Buffering Loader */}
+      <AILoadingOverlay
+        isLoading={loading}
+        title="Medical Document Vision OCR Active"
+        customSteps={[
+          '📄 Scanning document buffer & quality score...',
+          '🔍 Extracting raw text streams & prescription snippets...',
+          '🤖 Running Multimodal Gemini Vision medical entity parser...',
+          '✨ Structuring doctor, hospital, dates, medications & lab results...',
+        ]}
+      />
 
     </div>
   );

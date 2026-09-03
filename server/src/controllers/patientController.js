@@ -6,27 +6,59 @@ const catchAsync = require('../utils/catchAsync');
 const AppError = require('../utils/appError');
 const abdmSandboxService = require('../services/integrations/abdmSandboxService');
 
+const logger = require('../utils/logger');
+
 exports.createPatient = catchAsync(async (req, res, next) => {
   const { fullName, dob, gender, mobileNumber, abhaId, emergencyContact, preferredLanguage, preferredCommunication } = req.body;
 
+  logger.info(`[POST /api/patients] Received registration request for ABHA: ${abhaId || 'N/A'}, Mobile: ${mobileNumber || 'N/A'}`);
+
+  // Check if patient already exists by ABHA ID or Mobile Number to prevent E11000 duplicate key error
+  let existingPatient = null;
+  if (abhaId) {
+    existingPatient = await Patient.findOne({ abhaId });
+  }
+  if (!existingPatient && mobileNumber) {
+    existingPatient = await Patient.findOne({ mobileNumber });
+  }
+
+  if (existingPatient) {
+    logger.info(`[POST /api/patients] Existing patient found (_id: ${existingPatient._id}). Updating profile details...`);
+    if (fullName) existingPatient.fullName = fullName;
+    if (dob) existingPatient.dob = dob;
+    if (gender) existingPatient.gender = gender;
+    if (preferredLanguage) existingPatient.preferredLanguage = preferredLanguage;
+    await existingPatient.save();
+
+    return res.status(200).json({
+      status: 'success',
+      patient: existingPatient,
+      isExisting: true,
+    });
+  }
+
   const hospitalId = `HOSP-${Math.floor(100000 + Math.random() * 900000)}`;
+  logger.info(`[POST /api/patients] Creating new patient record with Hospital ID: ${hospitalId}...`);
 
   const patient = await Patient.create({
     userId: req.user?._id,
     hospitalId,
-    abhaId,
+    abhaId: abhaId || undefined,
     fullName,
-    dob,
-    gender,
+    dob: dob || new Date('1990-01-01'),
+    gender: gender || 'MALE',
     mobileNumber,
     emergencyContact,
     preferredLanguage: preferredLanguage || 'hi',
     preferredCommunication: preferredCommunication || 'HYBRID',
   });
 
+  logger.info(`[POST /api/patients] Successfully created patient (_id: ${patient._id})`);
+
   res.status(201).json({
     status: 'success',
     patient,
+    isExisting: false,
   });
 });
 

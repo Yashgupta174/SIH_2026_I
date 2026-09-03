@@ -33,13 +33,15 @@ export default function RegistrationPage() {
       });
 
       const patient = res.data.patient;
+      console.log('Registered patient from backend:', patient);
       await startNewSession(patient, intakeMode, language);
       navigate('/kiosk/consent');
     } catch (err) {
-      console.error('Registration fallback:', err);
-      // Demo Patient Fallback
+      console.warn('Backend patient registration failed or returned error, using local fallback:', err);
+      // Demo Patient Fallback with valid 24-character hex MongoDB ObjectId format
+      const validHexId = Array.from({ length: 24 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
       const dummyPatient = {
-        _id: 'pat_demo_' + Date.now(),
+        _id: validHexId,
         fullName,
         dob,
         gender,
@@ -47,6 +49,7 @@ export default function RegistrationPage() {
         abhaId,
         hospitalId: 'HOSP-98214',
       };
+      console.log('Generated fallback patient object:', dummyPatient);
       await startNewSession(dummyPatient, intakeMode, language);
       navigate('/kiosk/consent');
     } finally {

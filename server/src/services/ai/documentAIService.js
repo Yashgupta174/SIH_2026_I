@@ -1,9 +1,8 @@
-const { getAIProvider } = require('./aiServiceFactory');
+const documentOcrService = require('./documentOcrService');
 
 class DocumentAIService {
   async process(fileBuffer, fileMetadata) {
-    const provider = getAIProvider();
-    return await provider.processDocumentOCR(fileBuffer, fileMetadata);
+    return await documentOcrService.processDocument(fileBuffer, fileMetadata);
   }
 }
 

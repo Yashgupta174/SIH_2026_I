@@ -5,6 +5,7 @@ import { useLanguage } from '../../store/languageContext';
 import { useSession } from '../../store/sessionContext';
 import TTSPlayer from '../../components/TTSPlayer';
 import VoiceRecorderModal from '../../components/VoiceRecorderModal';
+import AILoadingOverlay from '../../components/AILoadingOverlay';
 
 export default function InterviewPage() {
   const navigate = useNavigate();
@@ -17,7 +18,12 @@ export default function InterviewPage() {
   const handleOptionSelect = async (optValue, source = 'TOUCH') => {
     setLoading(true);
     try {
-      await submitAnswer(optValue, source);
+      const res = await submitAnswer(optValue, source);
+      if (res?.isSufficientForDoctor || !res?.nextQuestion) {
+        setTimeout(() => {
+          navigate('/kiosk/scanner');
+        }, 1000);
+      }
     } finally {
       setLoading(false);
     }
@@ -180,6 +186,18 @@ export default function InterviewPage() {
         isOpen={isVoiceModalOpen}
         onClose={() => setIsVoiceModalOpen(false)}
         onConfirmAnswer={(spokenText) => handleOptionSelect(spokenText, 'VOICE')}
+      />
+
+      {/* AI Processing Buffering Loader */}
+      <AILoadingOverlay
+        isLoading={loading}
+        title="AI Intake & Triage Engine Active"
+        customSteps={[
+          '🤖 AI Clinical Assistant is analyzing your response...',
+          '⚡ Evaluating clinical rules & emergency triage flags...',
+          '💾 Syncing record with hospital EMR database...',
+          '✨ Synthesizing physician-ready clinical history...',
+        ]}
       />
 
     </div>

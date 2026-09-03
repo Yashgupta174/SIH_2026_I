@@ -3,18 +3,31 @@ const documentAIService = require('../services/ai/documentAIService');
 const catchAsync = require('../utils/catchAsync');
 const AppError = require('../utils/appError');
 
+const mongoose = require('mongoose');
+const logger = require('../utils/logger');
+
 exports.uploadAndProcessDocument = catchAsync(async (req, res, next) => {
   const { patientId, sessionId, documentType } = req.body;
 
   let fileName = req.file ? req.file.originalname : `report_${Date.now()}.pdf`;
   let fileUrl = req.file ? `/uploads/${req.file.filename}` : '/assets/sample_prescription.jpg';
 
+  const validPatientId = patientId && mongoose.Types.ObjectId.isValid(patientId)
+    ? patientId
+    : new mongoose.Types.ObjectId();
+
+  const validSessionId = sessionId && mongoose.Types.ObjectId.isValid(sessionId)
+    ? sessionId
+    : new mongoose.Types.ObjectId();
+
+  logger.info(`[POST /api/documents/upload] Processing upload for patientId: ${validPatientId}, sessionId: ${validSessionId}`);
+
   // Run Document Quality Engine & OCR Pipeline
-  const ocrResult = await documentAIService.process(req.file?.buffer, { fileName });
+  const ocrResult = await documentAIService.process(req.file?.buffer, { fileName, mimeType: req.file?.mimetype });
 
   const doc = await Document.create({
-    patientId,
-    sessionId,
+    patientId: validPatientId,
+    sessionId: validSessionId,
     documentType: documentType || ocrResult.docType || 'PRESCRIPTION',
     fileName,
     fileUrl,

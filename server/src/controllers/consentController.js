@@ -4,17 +4,34 @@ const catchAsync = require('../utils/catchAsync');
 const AppError = require('../utils/appError');
 const AuditLog = require('../models/AuditLog');
 
+const mongoose = require('mongoose');
+const logger = require('../utils/logger');
+
 exports.grantConsent = catchAsync(async (req, res, next) => {
   const { patientId, sessionId, language, method, kioskId } = req.body;
 
+  logger.info(`[POST /api/consents] Granting consent for patientId: ${patientId}, sessionId: ${sessionId || 'N/A'}`);
+
+  if (!patientId || !mongoose.Types.ObjectId.isValid(patientId)) {
+    logger.error(`[POST /api/consents] Invalid patientId ObjectId format: ${patientId}`);
+    return next(new AppError(`Invalid patient ID format: ${patientId}. Expected a valid 24-character hex MongoDB ObjectId.`, 400));
+  }
+
+  if (sessionId && !mongoose.Types.ObjectId.isValid(sessionId)) {
+    logger.error(`[POST /api/consents] Invalid sessionId ObjectId format: ${sessionId}`);
+    return next(new AppError(`Invalid session ID format: ${sessionId}. Expected a valid 24-character hex MongoDB ObjectId.`, 400));
+  }
+
   const consent = await Consent.create({
     patientId,
-    sessionId,
+    sessionId: sessionId || undefined,
     language: language || 'hi',
     method: method || 'TOUCH',
     kioskId,
     status: 'GRANTED',
   });
+
+  logger.info(`[POST /api/consents] Consent granted successfully (_id: ${consent._id})`);
 
   if (sessionId) {
     await ClinicalSession.findByIdAndUpdate(sessionId, { consentId: consent._id, status: 'CONSENTED' });

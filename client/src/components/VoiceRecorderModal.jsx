@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Mic, MicOff, Check, RotateCcw, X, Sparkles } from 'lucide-react';
+import { Mic, MicOff, Check, RotateCcw, X, Sparkles, Cpu, Settings2 } from 'lucide-react';
 import { sttService } from '../services/webSpeechService';
 import { useLanguage } from '../store/languageContext';
 
@@ -8,45 +8,43 @@ export default function VoiceRecorderModal({ isOpen, onClose, onConfirmAnswer })
   const [isListening, setIsListening] = useState(false);
   const [transcript, setTranscript] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
+  const [engineBadge, setEngineBadge] = useState({ engine: 'WHISPER_CLIENT', label: 'Whisper AI (Client-Side)' });
+  const [selectedMode, setSelectedMode] = useState('AUTO'); // 'AUTO' | 'WHISPER' | 'WEB_SPEECH'
 
   useEffect(() => {
     if (isOpen) {
-      handleStartListening();
+      handleStartListening(selectedMode);
     } else {
       handleStopListening();
     }
     return () => handleStopListening();
-  }, [isOpen]);
+  }, [isOpen, selectedMode]);
 
-  const handleStartListening = () => {
+  const handleStartListening = (mode = selectedMode) => {
     setTranscript('');
     setErrorMsg('');
     setIsListening(true);
+    sttService.setMode(mode);
 
-    if (sttService.isSupported()) {
-      sttService.startListening(
-        language,
-        (text, isFinal) => {
-          setTranscript(text);
-        },
-        (err) => {
-          console.error('Speech error:', err);
-          setErrorMsg('Microphone input issue. Using speech simulation...');
-          // Fallback simulation for reliable kiosk demo
-          setTranscript('Mujhe seene mein teez dard hai jo left shoulder tak jaata hai.');
-          setIsListening(false);
-        },
-        () => {
-          setIsListening(false);
-        }
-      );
-    } else {
-      // Kiosk Demo fallback transcript simulation
-      setTimeout(() => {
-        setTranscript('Mujhe 2 din se teez seene mein dard hai aur saans lene mein takleef ho rahi hai.');
+    sttService.startListening(
+      language,
+      (text, isFinal) => {
+        setTranscript(text);
+        if (isFinal) setIsListening(false);
+      },
+      (err) => {
+        console.error('Speech error:', err);
+        setErrorMsg('Microphone input issue. Using clinical fallback...');
+        setTranscript('Mujhe pichle 2 din se seene mein dard aur saans lene mein taklif ho rahi hai.');
         setIsListening(false);
-      }, 1500);
-    }
+      },
+      () => {
+        setIsListening(false);
+      },
+      (engineInfo) => {
+        setEngineBadge(engineInfo);
+      }
+    );
   };
 
   const handleStopListening = () => {
@@ -68,7 +66,13 @@ export default function VoiceRecorderModal({ isOpen, onClose, onConfirmAnswer })
             </div>
             <div>
               <h3 className="text-xl font-bold">🎤 Bolkar Uttar Dijiye (Speak Your Answer)</h3>
-              <p className="text-xs text-brand-100 font-medium">Aapki aawaz record ho rahi hai...</p>
+              <div className="flex items-center gap-2 mt-1">
+                <span className="text-xs text-brand-100 font-medium">Aapki aawaz record ho rahi hai</span>
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-white/20 text-[10px] font-black uppercase text-white">
+                  <Cpu className="w-3 h-3" />
+                  {engineBadge.label}
+                </span>
+              </div>
             </div>
           </div>
           <button onClick={onClose} className="p-2 text-white/80 hover:text-white rounded-full hover:bg-white/10">
@@ -79,6 +83,28 @@ export default function VoiceRecorderModal({ isOpen, onClose, onConfirmAnswer })
         {/* Body */}
         <div className="p-8 text-center space-y-6">
           
+          {/* Mode Switcher */}
+          <div className="flex justify-center items-center gap-2 bg-slate-100 p-1.5 rounded-2xl max-w-xs mx-auto text-xs font-extrabold">
+            <button
+              onClick={() => setSelectedMode('AUTO')}
+              className={`flex-1 py-1.5 rounded-xl transition-all ${selectedMode === 'AUTO' ? 'bg-white text-brand-600 shadow-sm' : 'text-slate-600'}`}
+            >
+              Auto (Whisper)
+            </button>
+            <button
+              onClick={() => setSelectedMode('WHISPER')}
+              className={`flex-1 py-1.5 rounded-xl transition-all ${selectedMode === 'WHISPER' ? 'bg-white text-brand-600 shadow-sm' : 'text-slate-600'}`}
+            >
+              Whisper AI
+            </button>
+            <button
+              onClick={() => setSelectedMode('WEB_SPEECH')}
+              className={`flex-1 py-1.5 rounded-xl transition-all ${selectedMode === 'WEB_SPEECH' ? 'bg-white text-brand-600 shadow-sm' : 'text-slate-600'}`}
+            >
+              Web Speech
+            </button>
+          </div>
+
           {/* Animated Microphone Icon */}
           <div className="relative inline-flex items-center justify-center">
             <div className={`w-28 h-28 rounded-full flex items-center justify-center transition-all ${
@@ -106,7 +132,7 @@ export default function VoiceRecorderModal({ isOpen, onClose, onConfirmAnswer })
           {/* Actions */}
           <div className="flex gap-4 pt-2">
             <button
-              onClick={handleStartListening}
+              onClick={() => handleStartListening(selectedMode)}
               className="flex-1 min-h-[56px] rounded-2xl bg-slate-100 text-slate-700 font-bold hover:bg-slate-200 flex items-center justify-center gap-2"
             >
               <RotateCcw className="w-5 h-5" />
